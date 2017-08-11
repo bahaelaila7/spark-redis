@@ -226,6 +226,16 @@ class RedisContext(@transient val sc: SparkContext) extends Serializable {
     kvs.foreachPartition(partition => setKVs(partition, ttl, redisConfig))
   }
 
+    /**
+    * @param ks RDD of Keys
+    */
+ def delRedisKeys(ks: RDD[String])
+               (implicit redisConfig: RedisConfig = new RedisConfig(new RedisEndpoint(sc.getConf))) {
+    ks.foreachPartition(partition => delKs(partition, redisConfig))
+  } 
+    
+  
+  
   /**
     * @param kvs      Pair RDD of K/V
     * @param hashName target hash's name which hold all the kvs
@@ -283,6 +293,25 @@ class RedisContext(@transient val sc: SparkContext) extends Serializable {
 
 
 object RedisContext extends Serializable {
+
+
+  /**
+    * @param arr ks which should be deleted from the target host
+    */
+    def delKs(arr: Iterator[String], redisConfig: RedisConfig) {
+    arr.map(k => (redisConfig.getHost(k), k)).toArray.groupBy(_._1).
+      mapValues(a => a.map(p => p._2)).foreach {
+      x => {
+        val conn = x._1.endpoint.connect()
+        val pipeline = conn.pipelined
+		pipeline.del(x._2:_*)
+		//x._2.foreach( k => pipeline.del[String](k) )
+        pipeline.sync
+        conn.close
+      }
+    }
+  }
+  
   /**
     * @param arr k/vs which should be saved in the target host
     *            save all the k/vs to the target host
